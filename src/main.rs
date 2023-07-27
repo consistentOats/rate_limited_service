@@ -81,22 +81,29 @@ pub fn put_vault_item(rate_limiter: RateLimiter, headers: HeaderMap, id: String)
         _ => return unauthorized_reply(),
     };
 
-    match rate_limiter.log_usage(PUT_VAULT_ITEM_ROUTE, bearer_token, RateLimit::new(PUT_VAULT_ITEM_RATE_LIMIT)) {
+    match rate_limiter.log_usage(&(PUT_VAULT_ITEM_ROUTE.to_owned() + &id), bearer_token, RateLimit::new(PUT_VAULT_ITEM_RATE_LIMIT)) {
         Ok(_) => ok_reply(),
         Err(err) => rate_limited_reply(err),
     }
 }
 
 fn unauthorized_reply() -> Result<warp::reply::Response, http::Error> {
-    Response::builder().status(StatusCode::UNAUTHORIZED).body("".into())
+    Response::builder()
+        .status(StatusCode::UNAUTHORIZED)
+        .body("".into())
 }
 
 fn ok_reply() -> Result<warp::reply::Response, http::Error> {
-    Response::builder().status(StatusCode::OK).body("".into())
+    Response::builder()
+        .status(StatusCode::OK)
+        .body("".into())
 }
 
 fn rate_limited_reply(err: RateLimitedError) -> Result<warp::reply::Response, http::Error> {
-    Response::builder().status(StatusCode::TOO_MANY_REQUESTS).body("".into())
+    Response::builder()
+        .status(StatusCode::TOO_MANY_REQUESTS)
+        .header("X-Ratelimit-Retry-After", (err.time_when_refreshed - Utc::now()).num_seconds())
+        .body("".into())
 }
 
 #[derive(Debug, Clone)]
@@ -117,7 +124,6 @@ impl RateLimiter {
         if let Some(mut pair) = self.usage_counter.get_mut(&hashed_key) {
             let count = pair.0;
             let refresh_time = pair.1;
-            println!("{:?},{:?}", count, refresh_time);
             if refresh_time < now {
                 *pair = (rate_limit.limit - 1, now + rate_limit.duration);
                 return Ok((rate_limit.limit - 1, now + rate_limit.duration)) 
@@ -154,7 +160,7 @@ impl RateLimit {
 
 #[derive(Debug, Clone)]
 pub struct RateLimitedError {
-    time_when_refreshed: DateTime<Utc>,
+    pub time_when_refreshed: DateTime<Utc>,
 }
 
 impl RateLimitedError {
