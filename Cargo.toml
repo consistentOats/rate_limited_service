@@ -12,6 +12,7 @@ tokio = { version = "1", features = ["full"] }
 chrono = "0.4"
 http = "0.2.5"
 sha256 = "1.2.2"
+dashmap = "5.5.0"
 
 [dependencies.uuid]
 features = [

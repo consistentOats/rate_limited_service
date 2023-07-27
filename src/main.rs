@@ -1,8 +1,9 @@
-use std::{sync::{Mutex, Arc}, collections::HashMap};
+use std::sync::{Arc};
 
 use chrono::{DateTime, Duration, Utc};
 use warp::{Filter, hyper::{Response, HeaderMap, StatusCode}};
 use sha256;
+use dashmap::DashMap;
 
 const POST_VAULT_ROUTE: &str = "POST /vault";
 const GET_VAULT_ITEMS_ROUTE: &str = "GET /vault/items";
@@ -100,18 +101,38 @@ fn rate_limited_reply(err: RateLimitedError) -> Result<warp::reply::Response, ht
 
 #[derive(Debug, Clone)]
 pub struct RateLimiter {
-    usage_counter: Arc<HashMap<String, (Mutex<i32>, DateTime<Utc>)>>
+    usage_counter: Arc<DashMap<String, (i32, DateTime<Utc>)>>
 }
 
 impl RateLimiter {
     pub fn new() -> Self {
-        RateLimiter { usage_counter: Arc::new(HashMap::new()) }
+        RateLimiter { usage_counter: Arc::new(DashMap::new()) }
     }
 
-    pub fn log_usage(self, route: &str, bearer_token: String, rate_limit: RateLimit) -> Result<(), RateLimitedError> {
+    pub fn log_usage(self, route: &str, bearer_token: String, rate_limit: RateLimit) -> Result<(i32, DateTime<Utc>), RateLimitedError> {
         // bearer token cannot be stored on it's own as it is a security issue
         let hashed_key = sha256::digest(route.to_string() + &bearer_token);
-        unimplemented!()
+        let now = Utc::now();
+        
+        if let Some(mut pair) = self.usage_counter.get_mut(&hashed_key) {
+            let count = pair.0;
+            let refresh_time = pair.1;
+            println!("{:?},{:?}", count, refresh_time);
+            if refresh_time < now {
+                *pair = (rate_limit.limit - 1, now + rate_limit.duration);
+                return Ok((rate_limit.limit - 1, now + rate_limit.duration)) 
+            } else if count > 0 {
+                *pair = (count - 1, refresh_time);
+                return Ok((count - 1, refresh_time)) 
+            }
+            else {
+                return Err(RateLimitedError::new(refresh_time))
+            }
+        } else {
+            self.usage_counter.insert(hashed_key, (rate_limit.limit - 1, now + rate_limit.duration));
+            Ok((rate_limit.limit - 1, now + rate_limit.duration))
+        }
+        
     }
 }
 
@@ -126,18 +147,18 @@ impl RateLimit {
         // duration defaults to 1 minute
         RateLimit { 
             limit, 
-            duration: Duration::minutes(1)
+            duration: Duration::minutes(1),
         }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct RateLimitedError {
-
+    time_when_refreshed: DateTime<Utc>,
 }
 
 impl RateLimitedError {
-    pub fn new() -> Self {
-        RateLimitedError {  }
+    pub fn new(refresh_time: DateTime<Utc>) -> Self {
+        RateLimitedError { time_when_refreshed: refresh_time }
     }
 }
