@@ -4,7 +4,9 @@ To run this project, [Install Rust](https://www.rust-lang.org/tools/install) the
 You can then use the included postman collections or just curl against the following endpoints:
 
 POST localhost:8080/vault
+
 GET localhost:8080/vault/items
+
 PUT localhost:8080/vault/items/:id
 
 Please be sure you include a bearer token when making this HTTP requests (it does not need to be a valid token, it just needs to not be blank).
