@@ -56,7 +56,7 @@ pub fn post_vault(rate_limiter: RateLimiter, headers: HeaderMap) -> Result<warp:
     };
 
     match rate_limiter.log_usage(POST_VAULT_ROUTE, bearer_token, RateLimit::new(POST_VAULT_RATE_LIMIT)) {
-        Ok(_) => ok_reply(),
+        Ok((requests_remaining, _)) => ok_reply(requests_remaining),
         Err(err) => rate_limited_reply(err),
     }
 }
@@ -69,7 +69,7 @@ pub fn get_vault_items(rate_limiter: RateLimiter, headers: HeaderMap) -> Result<
     };
 
     match rate_limiter.log_usage(GET_VAULT_ITEMS_ROUTE, bearer_token, RateLimit::new(GET_VAULT_ITEMS_RATE_LIMIT)) {
-        Ok(_) => ok_reply(),
+        Ok((requests_remaining, _)) => ok_reply(requests_remaining),
         Err(err) => rate_limited_reply(err),
     }
 }
@@ -82,7 +82,7 @@ pub fn put_vault_item(rate_limiter: RateLimiter, headers: HeaderMap, id: String)
     };
 
     match rate_limiter.log_usage(&(PUT_VAULT_ITEM_ROUTE.to_owned() + &id), bearer_token, RateLimit::new(PUT_VAULT_ITEM_RATE_LIMIT)) {
-        Ok(_) => ok_reply(),
+        Ok((requests_remaining, _)) => ok_reply(requests_remaining),
         Err(err) => rate_limited_reply(err),
     }
 }
@@ -93,16 +93,16 @@ fn unauthorized_reply() -> Result<warp::reply::Response, http::Error> {
         .body("".into())
 }
 
-fn ok_reply() -> Result<warp::reply::Response, http::Error> {
+fn ok_reply(requests_remaining: i32) -> Result<warp::reply::Response, http::Error> {
     Response::builder()
         .status(StatusCode::OK)
+        .header("X-Ratelimit-Remaining", requests_remaining)
         .body("".into())
 }
 
 fn rate_limited_reply(err: RateLimitedError) -> Result<warp::reply::Response, http::Error> {
     Response::builder()
         .status(StatusCode::TOO_MANY_REQUESTS)
-        .header("X-Ratelimit-Retry-After", (err.time_when_refreshed - Utc::now()).num_seconds())
         .body("".into())
 }
 
@@ -124,21 +124,24 @@ impl RateLimiter {
         if let Some(mut pair) = self.usage_counter.get_mut(&hashed_key) {
             let count = pair.0;
             let refresh_time = pair.1;
-            if refresh_time < now {
+
+            if refresh_time < now { 
+                // rate limiting interval has passed and needs to be refreshed
                 *pair = (rate_limit.limit - 1, now + rate_limit.duration);
                 return Ok((rate_limit.limit - 1, now + rate_limit.duration)) 
-            } else if count > 0 {
+            } else if count > 0 { 
+                // rate limiting interval does not need to be refreshed, but this request should count against the allowable requests
                 *pair = (count - 1, refresh_time);
                 return Ok((count - 1, refresh_time)) 
-            }
-            else {
+            } else { 
+                // rate limit has been reached
                 return Err(RateLimitedError::new(refresh_time))
             }
-        } else {
+        } else { 
+            // token / endpoint is being used for the first time, so we should add it to the usage counter
             self.usage_counter.insert(hashed_key, (rate_limit.limit - 1, now + rate_limit.duration));
             Ok((rate_limit.limit - 1, now + rate_limit.duration))
         }
-        
     }
 }
 
