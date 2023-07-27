@@ -1,7 +1,7 @@
 # Running this project
 To run this project, [Install Rust](https://www.rust-lang.org/tools/install) then run `cargo run` in the this project's directory - it should start an http server running on localhost:8080
 
-You can then use the included postman collections or just curl against the following endpoints:
+You can then use the included postman collection or just curl against the following endpoints:
 
 POST localhost:8080/vault
 
