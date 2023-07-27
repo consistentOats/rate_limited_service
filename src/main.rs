@@ -103,6 +103,7 @@ fn ok_reply(requests_remaining: i32) -> Result<warp::reply::Response, http::Erro
 fn rate_limited_reply(err: RateLimitedError) -> Result<warp::reply::Response, http::Error> {
     Response::builder()
         .status(StatusCode::TOO_MANY_REQUESTS)
+        .header("X-Ratelimit-Retry-After", (err.time_when_refreshed - Utc::now()).num_seconds())
         .body("".into())
 }
 
